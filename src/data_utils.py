@@ -66,7 +66,7 @@ class PMRIDataModule(L.LightningDataModule):
     def __init__(
         self,
         data_dir: str,
-        vendor_assignment: dict[str, str],
+        vendor_assignment: Dict[str, str],
         batch_size: int = 32,
         train_transforms: str = 'global_transforms',
     ):

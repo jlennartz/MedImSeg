@@ -26,6 +26,8 @@ from monai.utils import (
 )
 from monai.losses import DiceCELoss
 from monai.metrics import DiceMetric, MeanIoU
+from monai.networks.blocks import ResidualUnit, Convolution
+
 
 
 
@@ -38,27 +40,38 @@ class LightningSegmentationModel(L.LightningModule):
     #TODO: change init to receive only config and save it as hyperparameter. Add get_unet method to get the model
     def __init__(
         self,
-        model: torch.nn.Module,
-        lr: float = 1e-3,
-        patience: int = 5,
-        binary_target: bool = False,
         cfg: OmegaConf = None
     ):
         super().__init__()
         # this would save the model as hyperparameter, not desired!
-        self.save_hyperparameters(ignore=['model'])
-        self.model = model
-        self.lr = lr
-        self.patience = patience
+        self.cfg = cfg
+        self.model = self.get_unet(cfg.unet_config)
+        
+        self.save_hyperparameters({
+            'cfg': cfg,
+        })
+        
+        self.lr = cfg.lr
+        self.patience = cfg.patience
         self.cfg = cfg
         self.loss = DiceCELoss(
-            softmax=False if binary_target else True,
-            sigmoid=True if binary_target else False,
-            to_onehot_y=False if binary_target else True,
+            softmax=False if cfg.binary_target else True,
+            sigmoid=True if cfg.binary_target else False,
+            to_onehot_y=False if cfg.binary_target else True,
         )
         self.dsc = DiceMetric(include_background=False, reduction="none")
         self.IoU = MeanIoU(include_background=False, reduction="none")
 
+    def get_unet(self, unet_config):
+        return UNet(
+            spatial_dims=unet_config.spatial_dims,
+            in_channels=unet_config.in_channels,
+            out_channels=unet_config.out_channels,
+            channels=[unet_config.n_filters_init * 2 ** i for i in range(unet_config.depth)],
+            strides=[2] * (unet_config.depth - 1),
+            num_res_units=4
+        )
+    
     def forward(self, inputs):        
         return self.model(inputs)
     
@@ -116,7 +129,7 @@ class LightningSegmentationModel(L.LightningModule):
         else:
             outputs = (outputs > 0) * 1
         outputs = torch.nn.functional.one_hot(outputs, num_classes=num_classes).moveaxis(-1, 1)
-        dsc = dice_metric(outputs, target).nanmean()
+        dsc = self.dsc(outputs, target).nanmean()
 
 
         self.log_dict({
