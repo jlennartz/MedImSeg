@@ -832,7 +832,8 @@ def get_subset(
     n_cases: int = 10, 
     part: str = "tail",
     batch_size: int = 1,
-    verbose: bool = False
+    verbose: bool = False,
+    cache_path: Optional[str] = None
 ) -> Dataset:
     """Selects a subset of the otherwise very large CC-359 Dataset, which
         - is in the bottom/top fraction w.r.t. to a criterion and model
@@ -840,6 +841,12 @@ def get_subset(
           defined as k_means cluster centers, one for each case.
     """
     # TODO: cache subset indices for subsequent runs. Cache based on all
+    if cache_path and os.path.exists(cache_path):
+        with open(cache_path, 'rb') as f:
+            indices_selection = pickle.load(f)
+        print(f"A cached subset of the {cache_path}")
+        return dataset_from_indices(dataset, indices_selection)
+    
     # factors that influence selection, i.e. model, criterion, function params etc
     dataloader = DataLoader(
         dataset, 
@@ -889,6 +896,11 @@ def get_subset(
     )
     print(f'It took {(time() - start):.2f} seconds to determine center clusters.\n')
     # build dataset from selected slices and return
+    if cache_path:
+        with open(cache_path, 'wb') as f:
+            pickle.dump(indices_selection, f)
+        print(f"The saved Subset in the cache: {cache_path}")
+        
     subset = dataset_from_indices(dataset, indices_selection)
 
     return subset
