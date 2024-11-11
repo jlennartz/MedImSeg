@@ -24,22 +24,7 @@ from data_utils import MNMv2DataModule
 from unet import LightningSegmentationModel
 import torch.nn.functional as F
 
-class ActualSequentialSampler(Sampler):
-	r"""Samples elements sequentially, always in the same order.
 
-	Arguments:
-		data_source (Dataset): dataset to sample from
-	"""
-
-	def __init__(self, data_source):
-		self.data_source = data_source
-
-	def __iter__(self):
-		return iter(self.data_source)
-
-	def __len__(self):
-		return len(self.data_source)
-     
 class CLUESampling:
     """
     Implements CLUE: Clustering via Uncertainty-weighted Embeddings for segmentation tasks.
@@ -70,7 +55,7 @@ class CLUESampling:
                 # else:
                 #     e1 = model(data, with_emb=False)
 
-                # Приводим размер логитов к размеру эмбеддингов
+                # Adjust the size of logits to match the embeddings size
                 e1 = F.interpolate(e1, size=(height, width), mode='bilinear', align_corners=False)
 
                 if embedding_pen is None:
@@ -79,42 +64,42 @@ class CLUESampling:
                     embedding_pen = torch.zeros((num_samples * height * width, emb_dim), device='cpu')
                     embedding = torch.zeros((num_samples * height * width, num_classes), device='cpu')
 
-                # Преобразуем логиты и эмбеддинги для каждого пикселя
+                # Transform logits and embeddings for each pixel
                 e1 = e1.permute(0, 2, 3, 1).reshape(-1, num_classes)
                 e2 = e2.permute(0, 2, 3, 1).reshape(-1, emb_dim)
 
-                # Вычисляем текущие индексы
+                # Calculate current indices
                 start_idx = batch_idx * batch_sz * height * width
                 end_idx = start_idx + min(batch_sz * height * width, e2.shape[0])
 
-                # Заполняем тензоры
+                # Fill tensors
                 embedding[start_idx:end_idx, :] = e1.cpu()
                 embedding_pen[start_idx:end_idx, :] = e2.cpu()
 
-                if batch_idx > 50:
-                    break
+                # if batch_idx > 50:
+                #     break
         
         return embedding, embedding_pen
     
     def query(self, n, data_loader):
         self.model.eval()
 
-        # Получаем эмбеддинги для пикселей
+        # Obtain embeddings for pixels
         tgt_emb, tgt_pen_emb = self.get_embedding(self.model, data_loader, self.device, self.args, with_emb=True)
 
-        # Используем предпоследние эмбеддинги (tgt_pen_emb)
+        # Use the penultimate embeddings (tgt_pen_emb)
         tgt_pen_emb = tgt_pen_emb.cpu().numpy()
 
-        # Вычисляем неопределенность через энтропию для каждого пикселя
+        # Calculate uncertainty using entropy for each pixel
         tgt_scores = nn.Softmax(dim=1)(tgt_emb / self.T)
         tgt_scores += 1e-8
         sample_weights = -(tgt_scores * torch.log(tgt_scores)).sum(1).cpu().numpy()
 
-        # Запуск K-means с учетом весов неопределенности
+        # Run K-means with uncertainty weights
         km = KMeans(n)
         km.fit(tgt_pen_emb, sample_weight=sample_weights)
 
-        # Центроиды эмбединги
+        # Return the centroid embeddings
         return km.cluster_centers_
 
 if __name__ == '__main__':
