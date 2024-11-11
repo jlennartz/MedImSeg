@@ -7,6 +7,7 @@ https://github.com/kechua/DART20/blob/master/damri/model/unet.py
 from __future__ import annotations
 
 import warnings
+from tqdm import tqdm
 from collections.abc import Sequence
 from typing import (
     Dict,
@@ -37,11 +38,7 @@ __all__ = ["UNet", "Unet"]
 
 
 class LightningSegmentationModel(L.LightningModule):
-    #TODO: change init to receive only config and save it as hyperparameter. Add get_unet method to get the model
-    def __init__(
-        self,
-        cfg: OmegaConf = None
-    ):
+    def __init__(self, cfg: OmegaConf = None):
         super().__init__()
         # this would save the model as hyperparameter, not desired!
         self.cfg = cfg
@@ -72,9 +69,97 @@ class LightningSegmentationModel(L.LightningModule):
             num_res_units=4
         )
     
-    def forward(self, inputs):        
-        return self.model(inputs)
+    def forward(self, inputs, with_emb=False):        
+        if with_emb:
+            # For CLUE we need embedings from the penultimate layer
+            emb = self.model.model[:-1](inputs)
+            pred = self.model.model[-1](emb)
+            return pred, emb
+        else:
+            return self.model(inputs)
     
+    def finetune_model_on_centroids(self, centroids, data_loader, model):
+        model.train()
+        print(self.cfg)
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.cfg.lr)
+        
+        for batch_idx, batch in enumerate(tqdm(data_loader)):
+            data = batch['data'].to(self.device)
+            target = batch['target'].to(self.device)
+            
+            optimizer.zero_grad()
+            
+            outputs, embeddings_pen = model(data, with_emb=True)
+
+            # Transform picture embeddings to pixel embeddings
+            _, emb_dim, _, _ = embeddings_pen.shape
+            embeddings_pen = embeddings_pen.permute(0, 2, 3, 1).reshape(-1, emb_dim)  # Transform: (N, C, H, W) -> (N*H*W, C)
+
+            centroids_tensor = torch.tensor(centroids, dtype=torch.float32).to(self.device)
+
+            # Calculate distances from each pixel embedding to each centroid
+            distances = torch.cdist(embeddings_pen, centroids_tensor)  # (N*H*W, num_centroids)
+
+            # Minimum distances to centroids for each embedding
+            min_distances, _ = torch.min(distances, dim=1)  # (N*H*W)
+
+            # Average value of minimum distances as a regularizer
+            regularization_loss = torch.mean(min_distances)
+            
+            avg_distance = torch.mean(distances)  # Average value of all distances
+            regularization_loss_normalized = regularization_loss / (avg_distance + 1e-8)
+            # print(regularization_loss, avg_distance)
+
+            # Compute the main loss for segmentation (e.g., CrossEntropy)
+            segmentation_loss = self.loss(outputs, target)
+
+            # Total loss
+            # print(segmentation_loss, regularization_loss_normalized)
+            total_loss = segmentation_loss + self.cfg.lambda_centroids * regularization_loss_normalized
+            print(total_loss)
+            
+            # Update model weights
+            total_loss.backward()
+            optimizer.step()
+
+            if batch_idx > 1000:
+                break
+
+
+    def test_model(self, data_loader, device):
+        self.model.eval()
+
+        total_loss = 0
+        total_dsc = 0
+        num_batches = 0
+
+        with torch.no_grad():
+            for batch_idx, batch in enumerate(data_loader):
+                batch['input'] = batch['input'].to(device)
+                batch['target'] = batch['target'].to(device)
+
+                result = self.test_step(batch, batch_idx)
+                
+                total_loss += result['loss'].item()
+                total_dsc += result['dsc'].item()
+                num_batches += 1
+
+        avg_loss = total_loss / num_batches
+        avg_dsc = total_dsc / num_batches
+
+        self.log_dict({
+            'avg_test_loss': avg_loss,
+            'avg_test_dsc': avg_dsc,
+        })
+
+        print(f"Test Results - Average Loss: {avg_loss:.4f}, Average Dice Score: {avg_dsc:.4f}")
+
+        return {
+            'avg_loss': avg_loss,
+            'avg_dsc': avg_dsc
+        }
+
+
     def training_step(self, batch, batch_idx):
         input = batch['data']
         target = batch['target']
@@ -118,7 +203,7 @@ class LightningSegmentationModel(L.LightningModule):
             'loss': loss,
         }
     
-    def test_step(self, batch, batch_idx, dataloader_idx=0):
+    def test_step(self, batch, batch_idx=None, dataloader_idx=0):
         input = batch['input']
         target = batch['target']
         outputs = self(input)
