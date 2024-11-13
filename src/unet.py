@@ -31,10 +31,7 @@ from monai.networks.blocks import ResidualUnit, Convolution
 
 
 
-
 __all__ = ["UNet", "Unet"]
-
-
 
 
 class LightningSegmentationModel(L.LightningModule):
@@ -77,53 +74,6 @@ class LightningSegmentationModel(L.LightningModule):
             return pred, emb
         else:
             return self.model(inputs)
-    
-    def finetune_model_on_centroids(self, centroids, data_loader, model):
-        model.train()
-        print(self.cfg)
-        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.cfg.lr)
-        
-        for batch_idx, batch in enumerate(tqdm(data_loader)):
-            data = batch['data'].to(self.device)
-            target = batch['target'].to(self.device)
-            
-            optimizer.zero_grad()
-            
-            outputs, embeddings_pen = model(data, with_emb=True)
-
-            # Transform picture embeddings to pixel embeddings
-            _, emb_dim, _, _ = embeddings_pen.shape
-            embeddings_pen = embeddings_pen.permute(0, 2, 3, 1).reshape(-1, emb_dim)  # Transform: (N, C, H, W) -> (N*H*W, C)
-
-            centroids_tensor = torch.tensor(centroids, dtype=torch.float32).to(self.device)
-
-            # Calculate distances from each pixel embedding to each centroid
-            distances = torch.cdist(embeddings_pen, centroids_tensor)  # (N*H*W, num_centroids)
-
-            # Minimum distances to centroids for each embedding
-            min_distances, _ = torch.min(distances, dim=1)  # (N*H*W)
-
-            # Average value of minimum distances as a regularizer
-            regularization_loss = torch.mean(min_distances)
-            
-            avg_distance = torch.mean(distances)  # Average value of all distances
-            regularization_loss_normalized = regularization_loss / (avg_distance + 1e-8)
-            # print(regularization_loss, avg_distance)
-
-            # Compute the main loss for segmentation (e.g., CrossEntropy)
-            segmentation_loss = self.loss(outputs, target)
-
-            # Total loss
-            # print(segmentation_loss, regularization_loss_normalized)
-            total_loss = segmentation_loss + self.cfg.lambda_centroids * regularization_loss_normalized
-            print(total_loss)
-            
-            # Update model weights
-            total_loss.backward()
-            optimizer.step()
-
-            if batch_idx > 1000:
-                break
 
 
     def test_model(self, data_loader, device):
