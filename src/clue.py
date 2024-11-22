@@ -6,6 +6,7 @@ import torch.nn.functional as F
 from sklearn.cluster import KMeans
 from sklearn.metrics.pairwise import euclidean_distances
 from sklearn.metrics import pairwise_distances
+from sklearn.metrics import pairwise_distances_argmin
 
 from utils import SamplingStrategy, ActualSequentialSampler
 
@@ -20,28 +21,9 @@ class CLUESampling(SamplingStrategy):
         self.model = model
         self.device = device
         self.args = args
+        self.cluster_type = args.cluster_type
         self.random_state = np.random.RandomState(1234)
-        self.T = args.unet_config.clue_softmax_t
-
-    def weighted_k_medoids(self, X, weights, k, max_iter=300):
-        n_samples = X.shape[0]
-        medoids = np.random.choice(n_samples, k, replace=False)
-        labels = np.zeros(n_samples, dtype=int)
-        for _ in range(max_iter):
-            distances = pairwise_distances(X, X[medoids])
-            weighted_distances = distances * weights[:, np.newaxis]
-            new_labels = np.argmin(weighted_distances, axis=1)
-            if np.all(labels == new_labels):
-                break
-            labels = new_labels
-            for i in range(k):
-                cluster_points = np.where(labels == i)[0]
-                if len(cluster_points) == 0:
-                    continue
-                intra_cluster_distances = pairwise_distances(X[cluster_points], X[cluster_points])
-                weighted_intra_distances = np.sum(intra_cluster_distances * weights[cluster_points][:, np.newaxis], axis=1)
-                medoids[i] = cluster_points[np.argmin(weighted_intra_distances)]
-        return medoids, labels
+        self.T = args.clue_softmax_t
 
     def get_embedding(self, model, loader, device, args, with_emb=False):
         model.eval()
@@ -109,20 +91,20 @@ class CLUESampling(SamplingStrategy):
         # Run K-means with uncertainty weights
         km = KMeans(n)
         km.fit(tgt_pen_emb, sample_weight=sample_weights)
-        dists = euclidean_distances(km.cluster_centers_, tgt_pen_emb)
-        # Run K-medoids with uncertainty weights
-        # km = self.weighted_k_medoids(tgt_pen_emb, sample_weights, n, 1000)
-        # dists = euclidean_distances(km.medoids, tgt_pen_emb)
 
-        # Find nearest neighbors to inferred centroids
-        sort_idxs = dists.argsort(axis=1)
-        q_idxs = []
-        ax, rem = 0, n
-        while rem > 0:
-            q_idxs.extend(list(sort_idxs[:, ax][:rem]))
-            q_idxs = list(set(q_idxs))
-            rem = n-len(q_idxs)
-            ax += 1
+        if self.cluster_type == 'centroids':
+            q_idxs = pairwise_distances_argmin(km.cluster_centers_, tgt_pen_emb)
+        elif self.cluster_type == 'uncert_points' or self.cluster_type != 'centroids':
+            dists = euclidean_distances(km.cluster_centers_, tgt_pen_emb)
+            # Find nearest neighbors to inferred centroids
+            sort_idxs = dists.argsort(axis=1)
+            q_idxs = []
+            ax, rem = 0, n
+            while rem > 0:
+                q_idxs.extend(list(sort_idxs[:, ax][:rem]))
+                q_idxs = list(set(q_idxs))
+                rem = n-len(q_idxs)
+                ax += 1
 
         pixel_to_image_idx = np.array(self.pixel_to_image_idx)
         image_idxs = pixel_to_image_idx[q_idxs]
