@@ -1,12 +1,12 @@
 from torch import nn, Tensor
 
 class LayerAdapter(nn.Module):
-    """Layer Adapter to store [input means] for a given layer per batch.
+    """Layer Adapter to store activations for a given layer per batch.
 
     Attach this adapter via hooks (forward, preforward) to a layer in a 
     model by name of that layer.
-    After each forward pass, the [input means]
-    are stored in the attribute `input_means` of this adapter.
+    After each forward pass, the activations
+    are stored in the attribute `activations` of this adapter.
 
     Args:
         swivel (str): Name of the layer in the model to attach to.

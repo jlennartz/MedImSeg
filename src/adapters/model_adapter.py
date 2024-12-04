@@ -1,6 +1,7 @@
 from typing import Tuple, Callable
-from torch import nn, Tensor
+from torch import device, nn, Tensor
 from copy import deepcopy
+import time
 
 class ModelAdapter(nn.Module):
     """Wrapper for a model and a list of adapters.
@@ -12,11 +13,12 @@ class ModelAdapter(nn.Module):
         self,
         model: nn.Module,
         adapters: nn.ModuleList,
+        map_location: device = 'cuda',
         copy: bool = True,
     ):
         super().__init__()
         model = deepcopy(model) if copy else model
-        model.to('cuda')
+        model.to(map_location)
         self.model = model
         self.adapters = adapters
         self.adapter_handles = {}
