@@ -1,3 +1,4 @@
+import os
 import sys
 import numpy as np
 import torch
@@ -53,6 +54,7 @@ if __name__ == '__main__':
     parser.add_argument('--cluster_type', type=str, default='centroids', help="This parameter determines whether we will train our model on centroids or on the most confident data close to centroids.")
     parser.add_argument('--checkpoint_path', type=str, default='../../MedImSeg-Lab24/pre-trained/trained_UNets/mnmv2-10-12_06-11-2024.ckpt', 
                         help="Path to the model checkpoint.")
+    parser.add_argument('--device', type=str, default='cuda:0', help="Device to use for training (e.g., 'cuda:0', 'cuda:1', or 'cpu').")
     args = parser.parse_args()
 
     mnmv2_config   = OmegaConf.load('../../MedImSeg-Lab24/configs/mnmv2.yaml')
@@ -155,7 +157,7 @@ if __name__ == '__main__':
 
             unet.load_state_dict(model_state_dict)
     
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = torch.device(args.device if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
 
     # Getting the most uncertainty features
@@ -191,6 +193,16 @@ if __name__ == '__main__':
         target=combined_targets
     )
     new_model = clue_sampler.finetune_model(datamodule.mnm_train, datamodule.mnm_val)
+
+    if args.cluster_type == 'centroids':
+        save_dir = '../pre-trained/finetuned_on_centroids'
+    else:
+        save_dir = '../pre-trained/finetuned_on_uncert_points'
+
+    os.makedirs(save_dir, exist_ok=True)
+
+    model_save_path = os.path.join(save_dir, f'fituned_model_on{args.cluster_type}.pth')
+    torch.save(model.state_dict(), model_save_path)
 
     # Getting results AFTER using CLUE
     datamodule.setup(stage='test')
