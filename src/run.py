@@ -201,7 +201,7 @@ if __name__ == '__main__':
 
     os.makedirs(save_dir, exist_ok=True)
 
-    model_save_path = os.path.join(save_dir, f'fituned_model_on{args.cluster_type}.pth')
+    model_save_path = os.path.join(save_dir, f'fituned_model_on_{args.cluster_type}.pth')
     torch.save(model.state_dict(), model_save_path)
 
     # Getting results AFTER using CLUE
