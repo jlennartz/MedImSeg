@@ -160,7 +160,6 @@ class PMRIDataset(Dataset):
         }
 
 
-
 class MNMv2Dataset(Dataset):
 
     def __init__(
@@ -188,8 +187,6 @@ class MNMv2Dataset(Dataset):
         )
         self._crop = CenterCrop(256)
         self._load_data()
-
-
 
     def _load_data(self):
         self.input = []
@@ -292,4 +289,4 @@ class MNMv2Dataset(Dataset):
             "input": self.input[idx], 
             "target": self.target[idx],
             "index": idx
-        }
+    }
