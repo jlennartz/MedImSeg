@@ -3,6 +3,7 @@ import sys
 import numpy as np
 import torch
 from datetime import datetime
+from torchvision import transforms
 from omegaconf import OmegaConf
 import argparse
 import lightning as L
@@ -17,14 +18,17 @@ from data_utils import MNMv2DataModule
 from unet import LightningSegmentationModel
 from torch.utils.data import Dataset
 
+# TODO: Add weights and remove later
 class MNMv2Subset(Dataset):
     def __init__(
         self,
         input,
         target,
+        # weight
     ):
         self.input = input
         self.target = target
+        # self.weight = weight
 
     def __len__(self):
         return self.input.shape[0]
@@ -32,7 +36,8 @@ class MNMv2Subset(Dataset):
     def __getitem__(self, idx):
         return {
             "input": self.input[idx], 
-            "target": self.target[idx]
+            "target": self.target[idx],
+            # "weight": self.weight[idx]
         }
 
 def str2bool(v):
@@ -52,7 +57,7 @@ if __name__ == '__main__':
     parser.add_argument('--clue_softmax_t', type=float, default=1.0, help="Temperature.")
     parser.add_argument('--adapt_num_epochs', type=int, default=20, help="Number epochs for finetuning.")
     parser.add_argument('--cluster_type', type=str, default='centroids', help="This parameter determines whether we will train our model on centroids or on the most confident data close to centroids.")
-    parser.add_argument('--checkpoint_path', type=str, default='../../MedImSeg-Lab24/pre-trained/trained_UNets/mnmv2-10-12_06-11-2024.ckpt', 
+    parser.add_argument('--checkpoint_path', type=str, default='../../MedImSeg-Lab24/pre-trained/trained_UNets/mnmv2-15-19_10-12-2024-v1.ckpt', 
                         help="Path to the model checkpoint.")
     parser.add_argument('--device', type=str, default='cuda:0', help="Device to use for training (e.g., 'cuda:0', 'cuda:1', or 'cpu').")
     args = parser.parse_args()
@@ -68,6 +73,7 @@ if __name__ == '__main__':
         batch_size=mnmv2_config.batch_size,
         binary_target=mnmv2_config.binary_target,
         non_empty_target=mnmv2_config.non_empty_target,
+        # split_ratio=0.5
     )
 
     cfg = OmegaConf.create({
@@ -82,7 +88,7 @@ if __name__ == '__main__':
         'unet': OmegaConf.to_container(unet_config),
         'trainer': OmegaConf.to_container(trainer_config),
     })
-
+    
     if args.train:
         model = LightningSegmentationModel(cfg=cfg)
         
@@ -106,10 +112,9 @@ if __name__ == '__main__':
                 )
             ],
             precision='16-mixed',
-            gradient_clip_val=0.5,
-            devices=[0]
+            # gradient_clip_val=0.5,
+            devices=[1]
         )
-
         trainer.fit(model, datamodule=datamodule)
 
     else:
@@ -138,6 +143,27 @@ if __name__ == '__main__':
                 cfg=cfg
             )
 
+            trainer = L.Trainer(
+                limit_train_batches=trainer_config.limit_train_batches,
+                max_epochs=args.adapt_num_epochs,
+                callbacks=[
+                    EarlyStopping(
+                        monitor=trainer_config.early_stopping.monitor, 
+                        mode=trainer_config.early_stopping.mode, 
+                        patience=unet_config.patience * 2
+                    ),
+                    ModelCheckpoint(
+                        dirpath=trainer_config.model_checkpoint.dirpath,
+                        # filename=filename,
+                        save_top_k=trainer_config.model_checkpoint.save_top_k, 
+                        monitor=trainer_config.model_checkpoint.monitor,
+                    )
+                ],
+                precision='16-mixed',
+                gradient_clip_val=0.5,
+                devices=[1]
+            )
+
         elif load_as_pytorch_module:
             checkpoint = torch.load(args.checkpoint_path, map_location=torch.device("cpu"))
             model_state_dict = checkpoint['state_dict']
@@ -146,7 +172,7 @@ if __name__ == '__main__':
 
             print(model_config)
 
-            unet = UNet(
+            model = UNet(
                 spatial_dims=model_config['unet']['spatial_dims'],
                 in_channels=model_config['unet']['in_channels'],
                 out_channels=model_config['unet']['out_channels'],
@@ -155,27 +181,26 @@ if __name__ == '__main__':
                 num_res_units=4
             )
 
-            unet.load_state_dict(model_state_dict)
+            model.load_state_dict(model_state_dict)
     
     device = torch.device(args.device if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
 
+    # Getting results BEFORE using CLUE
+    datamodule.setup(stage='test')
+    test_res = trainer.test(model, datamodule=datamodule)
+    
     # Getting the most uncertainty features
-    datamodule.setup(stage='fit')
-    val_idx = np.arange(len(datamodule.mnm_val))
-    clue_sampler = CLUESampling(dset=datamodule.mnm_val,
-                                train_idx=val_idx, 
+    test_idx = np.arange(len(datamodule.mnm_test))
+    clue_sampler = CLUESampling(dset=datamodule.mnm_test,
+                                train_idx=test_idx, 
                                 model=model, 
                                 device=device, 
                                 args=cfg)
+    
     # Getting centroids / nearest points to centroids
     nearest_idx = clue_sampler.query(n=args.n)
-    selected_samples = [datamodule.mnm_val[i] for i in nearest_idx]
-
-    # Getting results BEFORE using CLUE
-    datamodule.setup(stage='test')
-    test_loader = datamodule.test_dataloader()
-    start_loss  = model.test_model(test_loader, device)
+    selected_samples = [datamodule.mnm_test[i] for i in nearest_idx]
 
     # Fine-tuning the model
     # Extend train data by test samples with the highest uncertainty
@@ -184,15 +209,18 @@ if __name__ == '__main__':
     selected_inputs = torch.stack([sample["input"] for sample in selected_samples])
     selected_targets = torch.stack([sample["target"] for sample in selected_samples])
 
-    # Combining input data and labels
+    # Combining input data and labels (train + test_clue)
     combined_inputs = torch.cat([datamodule.mnm_train.input, selected_inputs], dim=0)
     combined_targets = torch.cat([datamodule.mnm_train.target, selected_targets], dim=0)
 
-    datamodule.mnm_train = MNMv2Subset(
+    combined_data = MNMv2Subset(
         input=combined_inputs,
-        target=combined_targets
+        target=combined_targets,
     )
-    new_model = clue_sampler.finetune_model(datamodule.mnm_train, datamodule.mnm_val)
+
+    datamodule.mnm_train = combined_data
+
+    trainer.fit(model, datamodule=datamodule)
 
     if args.cluster_type == 'centroids':
         save_dir = '../pre-trained/finetuned_on_centroids'
@@ -206,5 +234,5 @@ if __name__ == '__main__':
 
     # Getting results AFTER using CLUE
     datamodule.setup(stage='test')
-    test_loader = datamodule.test_dataloader()
-    test_perf = new_model.test_model(test_loader, device)
+    model = model.to(device)
+    test_perf = trainer.test(model, datamodule=datamodule)

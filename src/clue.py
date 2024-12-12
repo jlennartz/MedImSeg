@@ -26,7 +26,8 @@ class CLUESampling(SamplingStrategy):
         self.T = args.clue_softmax_t
 
     def get_embedding(self, model, loader, device, args, with_emb=False):
-        model.eval()
+        # model.eval()
+        model = model.to(self.device)
         embedding_pen = None
         embedding = None
         emb_dim = None
@@ -73,7 +74,7 @@ class CLUESampling(SamplingStrategy):
                                                 num_workers=4,
 												batch_size=self.args.unet_config.batch_size, 
                                                 drop_last=False,
-                                                collate_fn=self.custom_collate_fn)
+                                                collate_fn=self.custom_collate_val)
         self.model.eval()
 
 

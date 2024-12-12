@@ -163,6 +163,7 @@ class MNMv2DataModule(L.LightningDataModule):
         binary_target: bool = False,
         train_transforms: str = 'global_transforms',
         non_empty_target: bool = True,
+        split_ratio: float = 0.0
     ):
         super().__init__()
         self.data_dir = data_dir
@@ -171,7 +172,7 @@ class MNMv2DataModule(L.LightningDataModule):
         self.train_transforms = train_transforms
         self.binary_target = binary_target
         self.non_empty_target = non_empty_target
-
+        self.split_ratio = split_ratio
         self.transforms = Transforms(patch_size=[256, 256])  # Assuming similar transform object as PMRIDataModule
 
 
@@ -180,7 +181,8 @@ class MNMv2DataModule(L.LightningDataModule):
         pass
 
 
-    def setup(self, stage=None):
+    def setup(self, 
+              stage: str = None):
         if stage == 'fit' or stage is None:
             # Load full dataset for training
             mnm_full = MNMv2Dataset(
@@ -191,7 +193,10 @@ class MNMv2DataModule(L.LightningDataModule):
                 normalize=True,  # Always normalizing
             )
             # Split using MNMv2Dataset's custom method
-            self.mnm_train, self.mnm_val = mnm_full.random_split(val_size=0.1)
+            if self.split_ratio > 0:
+                self.mnm_train, self.mnm_train2, self.mnm_val = mnm_full.random_split(val_size=0.1, split_ratio=self.split_ratio)
+            else:
+                self.mnm_train, self.mnm_val = mnm_full.random_split(val_size=0.1)
 
         if stage == 'test' or stage is None:
             self.mnm_test = MNMv2Dataset(

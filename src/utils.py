@@ -41,7 +41,16 @@ class SamplingStrategy:
     def query(self, n):
         pass
     
-    def custom_collate_fn(self, batch):
+    def custom_collate_train(self, batch):
+        inputs = [item['input'] for item in batch]
+        targets = [item['target'] for item in batch]
+        weights = [item['weight'] for item in batch]
+        inputs = torch.stack(inputs)
+        targets = torch.stack(targets)
+        weights = torch.stack(weights)
+        return inputs, targets, weights
+    
+    def custom_collate_val(self, batch):
         inputs = [item['input'] for item in batch]
         targets = [item['target'] for item in batch]
         inputs = torch.stack(inputs)
@@ -57,7 +66,7 @@ class SamplingStrategy:
             num_workers=4,
             batch_size=self.args.unet_config.batch_size,
             drop_last=False,
-            collate_fn=self.custom_collate_fn
+            collate_fn=self.custom_collate_train
         )
         
         # DataLoader for the validation dataset
@@ -66,7 +75,7 @@ class SamplingStrategy:
             num_workers=4,
             batch_size=self.args.unet_config.batch_size,
             drop_last=False,
-            collate_fn=self.custom_collate_fn
+            collate_fn=self.custom_collate_val
         )
 
         optimizer = torch.optim.Adam(self.model.parameters(), lr=self.args.lr)
@@ -84,12 +93,12 @@ class SamplingStrategy:
             epoch_loss = 0
 
             # Training loop
-            for _, (data, target) in enumerate(tqdm(data_loader)):
-                data, target = data.to(self.device), target.to(self.device)
+            for _, (data, target, weight) in enumerate(tqdm(data_loader)):
+                data, target, weight = data.to(self.device), target.to(self.device), weight.to(self.device)
 
                 optimizer.zero_grad()
                 outputs = self.model(data)
-                loss = criterion(outputs, target)
+                loss = criterion(outputs, target)# * weight).mean()
                 loss.backward()
                 optimizer.step()
 

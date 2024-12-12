@@ -41,6 +41,11 @@ class LightningSegmentationModel(L.LightningModule):
         self.cfg = cfg
         self.model = self.get_unet(cfg.unet_config)
         
+        self.final_train_loss = None
+        self.final_train_acc = None
+        self.final_val_loss = None
+        self.final_val_acc = None
+        
         self.save_hyperparameters({
             'cfg': cfg,
         })
@@ -97,10 +102,10 @@ class LightningSegmentationModel(L.LightningModule):
         avg_loss = total_loss / num_batches
         avg_dsc = total_dsc / num_batches
 
-        self.log_dict({
-            'avg_test_loss': avg_loss,
-            'avg_test_dsc': avg_dsc,
-        })
+        # self.log_dict({
+        #     'avg_test_loss': avg_loss,
+        #     'avg_test_dsc': avg_dsc,
+        # })
 
         print(f"Test Results - Average Loss: {avg_loss:.4f}, Average Dice Score: {avg_dsc:.4f}")
 
@@ -128,7 +133,8 @@ class LightningSegmentationModel(L.LightningModule):
             'train_dsc': dsc,
         })
         return {
-            'loss': loss
+            'loss': loss,
+            'dsc': dsc
         }
     
     def validation_step(self, batch, batch_idx, dataloader_idx=0):
@@ -153,6 +159,16 @@ class LightningSegmentationModel(L.LightningModule):
             'loss': loss,
         }
     
+    def on_train_epoch_end(self):
+        # Сохраняем последние значения train_loss и train_acc
+        self.final_train_loss = self.trainer.callback_metrics["train_loss"]
+        self.final_train_acc = self.trainer.callback_metrics["train_dsc"]
+    
+    def on_validation_epoch_end(self):
+        # Сохраняем последние значения val_loss и val_acc
+        self.final_val_loss = self.trainer.callback_metrics["val_loss"]
+        self.final_val_acc = self.trainer.callback_metrics["val_dsc"]
+
     def test_step(self, batch, batch_idx=None, dataloader_idx=0):
         input = batch['input']
         target = batch['target']
@@ -192,6 +208,20 @@ class LightningSegmentationModel(L.LightningModule):
             }
         }
     
+    # def on_train_epoch_end(self):
+    #     avg_loss = torch.stack(self.train_losses).mean()
+    #     avg_dsc = torch.stack(self.train_dscs).mean()
+
+    #     self.log("avg_train_loss", avg_loss, prog_bar=True)
+    #     self.log("avg_train_dsc", avg_dsc, prog_bar=True)
+
+    # def on_validation_epoch_end(self):
+    #     avg_loss = self.trainer.callback_metrics.get("val_loss", torch.tensor(0.0))
+    #     avg_dsc = self.trainer.callback_metrics.get("val_dsc", torch.tensor(0.0))
+
+    #     self.log("avg_val_loss", avg_loss, prog_bar=True)
+    #     self.log("avg_val_dsc", avg_dsc, prog_bar=True)
+
 
 # Copyright (c) MONAI Consortium
 # Licensed under the Apache License, Version 2.0 (the "License");
