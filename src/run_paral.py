@@ -25,11 +25,9 @@ class MNMv2Subset(Dataset):
         self,
         input,
         target,
-        # weight
     ):
         self.input = input
         self.target = target
-        # self.weight = weight
 
     def __len__(self):
         return self.input.shape[0]
@@ -38,7 +36,6 @@ class MNMv2Subset(Dataset):
         return {
             "input": self.input[idx], 
             "target": self.target[idx],
-            # "weight": self.weight[idx]
         }
 
 def str2bool(v):
@@ -61,7 +58,7 @@ if __name__ == '__main__':
     parser.add_argument('--checkpoint_path', type=str, default='../../MedImSeg-Lab24/pre-trained/trained_UNets/mnmv2-15-19_10-12-2024-v1.ckpt', 
                         help="Path to the model checkpoint.")
     parser.add_argument('--device', type=str, default='cuda:0', help="Device to use for training (e.g., 'cuda:0', 'cuda:1', or 'cpu').")
-    parser.add_argument('--paral', type=bool, default=False, help='Enabling parallelization of the embedding, clustering, and model completion process')
+    parser.add_argument('--paral', type=bool, default=True, help='Enabling parallelization of the embedding, clustering, and model completion process')
     args = parser.parse_args()
 
     mnmv2_config   = OmegaConf.load('../../MedImSeg-Lab24/configs/mnmv2.yaml')
@@ -83,13 +80,13 @@ if __name__ == '__main__':
         'binary_target': True if unet_config.out_channels == 1 else False,
         'lr': unet_config.lr,
         'patience': unet_config.patience,
-        'paral': args.paral,
         'adapt_num_epochs': args.adapt_num_epochs,
         'cluster_type': args.cluster_type,
         'clue_softmax_t': args.clue_softmax_t,
         'dataset': OmegaConf.to_container(mnmv2_config),
         'unet': OmegaConf.to_container(unet_config),
         'trainer': OmegaConf.to_container(trainer_config),
+        'paral': args.paral
     })
     
     if args.train:
@@ -115,8 +112,10 @@ if __name__ == '__main__':
                 )
             ],
             precision='16-mixed',
+            strategy='ddp',
+            accelerator='gpu',
             # gradient_clip_val=0.5,
-            devices=[1]
+            devices=[0, 1, 2, 3]
         )
         trainer.fit(model, datamodule=datamodule)
 
@@ -164,7 +163,9 @@ if __name__ == '__main__':
                 ],
                 precision='16-mixed',
                 # gradient_clip_val=0.5,
-                devices=[1]
+                strategy='ddp',
+                accelerator='gpu',
+                devices=[0, 1, 2, 3]
             )
 
         elif load_as_pytorch_module:
@@ -187,7 +188,7 @@ if __name__ == '__main__':
             model.load_state_dict(model_state_dict)
     
     device = torch.device(args.device if torch.cuda.is_available() else 'cpu')
-    model = model.to(device)
+    # model = model.to(device)
 
     # Getting results BEFORE using CLUE
     datamodule.setup(stage='test')
@@ -239,5 +240,5 @@ if __name__ == '__main__':
 
     # Getting results AFTER using CLUE
     datamodule.setup(stage='test')
-    model = model.to(device)
+
     test_perf = trainer.test(model, datamodule=datamodule)

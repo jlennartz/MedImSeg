@@ -7,6 +7,7 @@ from sklearn.cluster import KMeans
 from sklearn.metrics.pairwise import euclidean_distances
 from sklearn.metrics import pairwise_distances
 from sklearn.metrics import pairwise_distances_argmin
+from torch.utils.data import DataLoader, DistributedSampler
 
 from utils import SamplingStrategy, ActualSequentialSampler
 
@@ -31,7 +32,9 @@ class CLUESampling(SamplingStrategy):
         embedding_pen = None
         embedding = None
         emb_dim = None
+        avg_pool = torch.nn.AvgPool2d(kernel_size=(3, 3), stride=2)
         self.pixel_to_image_idx = []
+
         with torch.no_grad():
             for batch_idx, (data, _) in enumerate(tqdm(loader)):
                 data = data.to(device)
@@ -50,36 +53,40 @@ class CLUESampling(SamplingStrategy):
                     embedding_pen = torch.zeros([len(loader.sampler) * e2.shape[2] * e2.shape[3], emb_dim])
                     embedding = torch.zeros([len(loader.sampler) * e2.shape[2] * e2.shape[3], num_classes])
 
-                e1 = e1.permute(0, 2, 3, 1).reshape(-1, num_classes)
-                e2 = e2.permute(0, 2, 3, 1).reshape(-1, emb_dim)
-
                 # Save image indexes
                 for i in range(batch_size):
                     image_idx = batch_idx * batch_size + i
                     self.pixel_to_image_idx.extend([image_idx] * (height * width))
 
                 # Fill tensors
+                e1 = avg_pool(e1).permute(0, 2, 3, 1).reshape(-1, num_classes)
+                e2 = avg_pool(e2).permute(0, 2, 3, 1).reshape(-1, emb_dim)
+
                 start_idx = batch_idx * e2.shape[0]
                 end_idx = start_idx + e2.shape[0]
+
                 embedding_pen[start_idx:end_idx, :] = e2.cpu()
                 embedding[start_idx:end_idx, :] = e1.cpu()
         
-        return embedding, embedding_pen, height, width
+        return embedding, embedding_pen
     
     def query(self, n):
         idxs_unlabeled = np.arange(len(self.train_idx))[~self.idxs_lb]
-        train_sampler = ActualSequentialSampler(self.train_idx[idxs_unlabeled])
-        data_loader = torch.utils.data.DataLoader(self.dset, 
-                                                sampler=train_sampler, 
-                                                num_workers=4,
-												batch_size=self.args.unet_config.batch_size, 
-                                                drop_last=False,
-                                                collate_fn=self.custom_collate_val)
+        if self.args.paral:
+            train_sampler = DistributedSampler(ActualSequentialSampler(self.train_idx[idxs_unlabeled]))
+        else:
+            train_sampler = ActualSequentialSampler(self.train_idx[idxs_unlabeled])
+        data_loader = DataLoader(self.dset, 
+                                sampler=train_sampler, 
+                                num_workers=4,
+                                batch_size=self.args.unet_config.batch_size, 
+                                drop_last=False,
+                                collate_fn=self.custom_collate_val)
         self.model.eval()
 
 
-        # Obtain embeddings for pixels
-        tgt_emb, tgt_pen_emb, height, width = self.get_embedding(self.model, data_loader, self.device, self.args, with_emb=True)
+        # Obtain embeddings for images
+        tgt_emb, tgt_pen_emb = self.get_embedding(self.model, data_loader, self.device, self.args, with_emb=True)
 
         # Use the penultimate embeddings (tgt_pen_emb)
         tgt_pen_emb = tgt_pen_emb.cpu().numpy()
@@ -88,24 +95,25 @@ class CLUESampling(SamplingStrategy):
         tgt_scores = nn.Softmax(dim=1)(tgt_emb / self.T)
         tgt_scores += 1e-8
         sample_weights = -(tgt_scores * torch.log(tgt_scores)).sum(1).cpu().numpy()
-
+        # TODO: Set a threshold that will allow you to remove embeddings with the least uncertainty
+        
         # Run K-means with uncertainty weights
         km = KMeans(n)
         km.fit(tgt_pen_emb, sample_weight=sample_weights)
 
-        if self.cluster_type == 'centroids':
-            q_idxs = pairwise_distances_argmin(km.cluster_centers_, tgt_pen_emb)
-        elif self.cluster_type == 'uncert_points' or self.cluster_type != 'centroids':
-            dists = euclidean_distances(km.cluster_centers_, tgt_pen_emb)
-            # Find nearest neighbors to inferred centroids
-            sort_idxs = dists.argsort(axis=1)
-            q_idxs = []
-            ax, rem = 0, n
-            while rem > 0:
-                q_idxs.extend(list(sort_idxs[:, ax][:rem]))
-                q_idxs = list(set(q_idxs))
-                rem = n-len(q_idxs)
-                ax += 1
+        # if self.cluster_type == 'centroids':
+            # q_idxs = pairwise_distances_argmin(km.cluster_centers_, tgt_pen_emb)
+        # elif self.cluster_type == 'uncert_points' or self.cluster_type != 'centroids':
+        dists = euclidean_distances(km.cluster_centers_, tgt_pen_emb)
+        # Find nearest neighbors to inferred centroids
+        sort_idxs = dists.argsort(axis=1)
+        q_idxs = []
+        ax, rem = 0, n
+        while rem > 0:
+            q_idxs.extend(list(sort_idxs[:, ax][:rem]))
+            q_idxs = list(set(q_idxs))
+            rem = n-len(q_idxs)
+            ax += 1
 
         pixel_to_image_idx = np.array(self.pixel_to_image_idx)
         image_idxs = pixel_to_image_idx[q_idxs]
