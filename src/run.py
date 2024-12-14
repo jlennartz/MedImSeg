@@ -62,6 +62,7 @@ if __name__ == '__main__':
                         help="Path to the model checkpoint.")
     parser.add_argument('--device', type=str, default='cuda:0', help="Device to use for training (e.g., 'cuda:0', 'cuda:1', or 'cpu').")
     parser.add_argument('--paral', type=bool, default=False, help='Enabling parallelization of the embedding, clustering, and model completion process')
+    parser.add_argument('--threshold', type=float, default=0.5, help='The threshold removes the images in which the model is most confident')
     args = parser.parse_args()
 
     mnmv2_config   = OmegaConf.load('../../MedImSeg-Lab24/configs/mnmv2.yaml')
@@ -84,6 +85,7 @@ if __name__ == '__main__':
         'lr': unet_config.lr,
         'patience': unet_config.patience,
         'paral': args.paral,
+        'threshold': args.threshold,
         'adapt_num_epochs': args.adapt_num_epochs,
         'cluster_type': args.cluster_type,
         'clue_softmax_t': args.clue_softmax_t,
