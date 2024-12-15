@@ -115,7 +115,7 @@ if __name__ == '__main__':
             strategy='ddp',
             accelerator='gpu',
             # gradient_clip_val=0.5,
-            devices=[0, 1, 2, 3]
+            devices=[0, 1, 2]
         )
         trainer.fit(model, datamodule=datamodule)
 
@@ -165,7 +165,7 @@ if __name__ == '__main__':
                 # gradient_clip_val=0.5,
                 strategy='ddp',
                 accelerator='gpu',
-                devices=[0, 1, 2, 3]
+                devices=[0, 1, 2]
             )
 
         elif load_as_pytorch_module:

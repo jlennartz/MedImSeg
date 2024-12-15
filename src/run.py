@@ -38,7 +38,6 @@ class MNMv2Subset(Dataset):
         return {
             "input": self.input[idx], 
             "target": self.target[idx],
-            # "weight": self.weight[idx]
         }
 
 def str2bool(v):
@@ -76,7 +75,6 @@ if __name__ == '__main__':
         batch_size=mnmv2_config.batch_size,
         binary_target=mnmv2_config.binary_target,
         non_empty_target=mnmv2_config.non_empty_target,
-        # split_ratio=0.5
     )
 
     cfg = OmegaConf.create({
@@ -194,8 +192,7 @@ if __name__ == '__main__':
     # Getting results BEFORE using CLUE
     datamodule.setup(stage='test')
     test_res = trainer.test(model, datamodule=datamodule)
-    
-    # Getting the most uncertainty features
+
     test_idx = np.arange(len(datamodule.mnm_test))
     clue_sampler = CLUESampling(dset=datamodule.mnm_test,
                                 train_idx=test_idx, 
@@ -203,16 +200,20 @@ if __name__ == '__main__':
                                 device=device, 
                                 args=cfg)
     # Getting centroids / nearest points to centroids
+
+    # There is no need to set the number of centroids more than the number of photos
+    if args.num_clusters > len(clue_sampler.dset):
+        args.num_clusters = len(clue_sampler.dset)
+
     start = time.time()
     nearest_idx = clue_sampler.query(n=args.num_clusters)
     end = time.time()
     print("Working Time: ", end - start)
     selected_samples = [datamodule.mnm_test[i] for i in nearest_idx]
 
-    # Fine-tuning the model
-    # Extend train data by test samples with the highest uncertainty
+    # # Fine-tuning the model
+    # # Extend train data by test samples with the highest uncertainty
     datamodule.setup(stage='fit')
-
     selected_inputs = torch.stack([sample["input"] for sample in selected_samples])
     selected_targets = torch.stack([sample["target"] for sample in selected_samples])
 
@@ -224,7 +225,7 @@ if __name__ == '__main__':
         input=combined_inputs,
         target=combined_targets,
     )
-
+    
     datamodule.mnm_train = combined_data
 
     trainer.fit(model, datamodule=datamodule)

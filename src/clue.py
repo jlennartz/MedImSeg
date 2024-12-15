@@ -28,10 +28,14 @@ class CLUESampling(SamplingStrategy):
     def get_embedding(self, model, loader, device, args, with_emb=False):
         self.model.eval()
         model = model.to(self.device)
+        
         embedding_pen, embedding, emb_dim = None, None, None
-        avg_pool = torch.nn.AvgPool2d(kernel_size=(3, 3), stride=1)
         self.pixel_to_image_idx = []
 
+        target_size = 1024
+        # avg_pool = torch.nn.AvgPool2d(kernel_size=(3, 3), stride=1)
+        avg_pool = torch.nn.AdaptiveAvgPool2d((int(target_size ** 0.5), int(target_size ** 0.5)))
+        
         with torch.no_grad():
             for batch_idx, (data, _) in enumerate(tqdm(loader)):
                 data = data.to(device)
@@ -56,7 +60,7 @@ class CLUESampling(SamplingStrategy):
                     self.pixel_to_image_idx.extend([image_idx] * (height * width))
                 
                 # AvgPooling
-                # while e1.shape[2] * e1.shape[3] != 1024:
+                # if e1.shape[2] * e1.shape[3] != target_size:
                 #     e1 = avg_pool(e1)
                 #     e2 = avg_pool(e2)
 
@@ -83,11 +87,12 @@ class CLUESampling(SamplingStrategy):
                                 num_workers=4,
                                 batch_size=self.args.unet_config.batch_size, 
                                 drop_last=False,
-                                collate_fn=self.custom_collate_val)
+                                collate_fn=self.custom_collate)
     
         # Obtain embeddings for images
         tgt_emb, tgt_pen_emb = self.get_embedding(self.model, data_loader, self.device, self.args, with_emb=True)
-
+        print(tgt_emb.shape)
+        print(tgt_pen_emb.shape)
         # Use the penultimate embeddings (tgt_pen_emb)
         tgt_pen_emb = tgt_pen_emb.cpu().numpy()
 
@@ -95,7 +100,8 @@ class CLUESampling(SamplingStrategy):
         tgt_scores = nn.Softmax(dim=1)(tgt_emb / self.T)
         tgt_scores += 1e-8
         #TODO: Later delete square
-        sample_weights = ((-(tgt_scores * torch.log(tgt_scores)).sum(1))**2).cpu().numpy()
+        # sample_weights = ((-(tgt_scores * torch.log(tgt_scores)).sum(1))**2).cpu().numpy()
+        sample_weights = (-(tgt_scores * torch.log(tgt_scores)).sum(1)).cpu().numpy()
         
         # Set a threshold for uncertainty and filter embeddings
         valid_mask = sample_weights > self.args.threshold
@@ -119,8 +125,9 @@ class CLUESampling(SamplingStrategy):
             q_idxs = list(set(q_idxs))
             rem = n-len(q_idxs)
             ax += 1
-
+        
         image_idxs = filtered_pixel_to_image_idx[q_idxs]
+        
         image_idxs = list(set(image_idxs))
         
         return idxs_unlabeled[image_idxs]
