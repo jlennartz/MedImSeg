@@ -118,6 +118,7 @@ if __name__ == '__main__':
             # gradient_clip_val=0.5,
             devices=[1]
         )
+        
         trainer.fit(model, datamodule=datamodule)
 
     else:
@@ -191,16 +192,16 @@ if __name__ == '__main__':
 
     # Getting results BEFORE using CLUE
     datamodule.setup(stage='test')
+    model.eval()
     test_res = trainer.test(model, datamodule=datamodule)
 
+    # Getting centroids / nearest points to centroids
     test_idx = np.arange(len(datamodule.mnm_test))
     clue_sampler = CLUESampling(dset=datamodule.mnm_test,
                                 train_idx=test_idx, 
                                 model=model, 
                                 device=device, 
                                 args=cfg)
-    # Getting centroids / nearest points to centroids
-
     # There is no need to set the number of centroids more than the number of photos
     if args.num_clusters > len(clue_sampler.dset):
         args.num_clusters = len(clue_sampler.dset)
@@ -227,8 +228,12 @@ if __name__ == '__main__':
     )
     
     datamodule.mnm_train = combined_data
+    new_train_loader = datamodule.train_dataloader()
 
-    trainer.fit(model, datamodule=datamodule)
+    model.train()
+    trainer.fit(model=model, 
+                train_dataloaders=new_train_loader, 
+                val_dataloaders=datamodule.val_dataloader())
 
     if args.cluster_type == 'centroids':
         save_dir = '../pre-trained/finetuned_on_centroids'
@@ -243,4 +248,5 @@ if __name__ == '__main__':
     # Getting results AFTER using CLUE
     datamodule.setup(stage='test')
     model = model.to(device)
+    model.eval()
     test_perf = trainer.test(model, datamodule=datamodule)

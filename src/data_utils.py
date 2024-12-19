@@ -224,6 +224,7 @@ class MNMv2DataModule(L.LightningDataModule):
             return_orig=False
         )
         
+        print(f"[DEBUG] Size of training dataset inside train_dataloader: {len(mnm_train_loader._data)}")
         return MultiThreadedAugmenter(
             data_loader=mnm_train_loader,
             transform=self.transforms.get_transforms(self.train_transforms),

@@ -68,7 +68,7 @@ if __name__ == '__main__':
     unet_config    = OmegaConf.load('../../MedImSeg-Lab24/configs/monai_unet.yaml')
     trainer_config = OmegaConf.load('../../MedImSeg-Lab24/configs/unet_trainer.yaml')
 
-    for i in [1, 10, 50, 100, 500, 1000]:
+    for i in [1, 10, 50, 100, 300, 500, 700, 1000]:
         # init datamodule
         datamodule = MNMv2DataModule(
             data_dir=mnmv2_config.data_dir,
@@ -192,16 +192,16 @@ if __name__ == '__main__':
 
         # Getting results BEFORE using CLUE
         datamodule.setup(stage='test')
+        model.eval()
         test_res = trainer.test(model, datamodule=datamodule)
 
+        # Getting centroids / nearest points to centroids
         test_idx = np.arange(len(datamodule.mnm_test))
         clue_sampler = CLUESampling(dset=datamodule.mnm_test,
                                     train_idx=test_idx, 
                                     model=model, 
                                     device=device, 
                                     args=cfg)
-        # Getting centroids / nearest points to centroids
-
         # There is no need to set the number of centroids more than the number of photos
         if i > len(clue_sampler.dset):
             i = len(clue_sampler.dset)
@@ -218,7 +218,7 @@ if __name__ == '__main__':
         selected_inputs = torch.stack([sample["input"] for sample in selected_samples])
         selected_targets = torch.stack([sample["target"] for sample in selected_samples])
 
-        # Combining input data and labels (train + test_clue)
+        # # Combining input data and labels (train + test_clue)
         combined_inputs = torch.cat([datamodule.mnm_train.input, selected_inputs], dim=0)
         combined_targets = torch.cat([datamodule.mnm_train.target, selected_targets], dim=0)
 
@@ -228,8 +228,12 @@ if __name__ == '__main__':
         )
         
         datamodule.mnm_train = combined_data
+        new_train_loader = datamodule.train_dataloader()
 
-        trainer.fit(model, datamodule=datamodule)
+        model.train()
+        trainer.fit(model=model, 
+                    train_dataloaders=new_train_loader, 
+                    val_dataloaders=datamodule.val_dataloader())
 
         if args.cluster_type == 'centroids':
             save_dir = '../pre-trained/finetuned_on_centroids'
@@ -244,6 +248,7 @@ if __name__ == '__main__':
         # Getting results AFTER using CLUE
         datamodule.setup(stage='test')
         model = model.to(device)
+        model.eval()
         test_perf = trainer.test(model, datamodule=datamodule)[0]
 
         # Write results to file
