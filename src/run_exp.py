@@ -223,8 +223,8 @@ if __name__ == '__main__':
         combined_targets = torch.cat([datamodule.mnm_train.target, selected_targets], dim=0)
 
         combined_data = MNMv2Subset(
-            input=combined_inputs,
-            target=combined_targets,
+            input=selected_inputs,#combined_inputs,
+            target=selected_targets,#combined_targets,
         )
         
         datamodule.mnm_train = combined_data
@@ -253,8 +253,8 @@ if __name__ == '__main__':
 
         # Write results to file
         if i == 1:
-            with open("results_train_test.txt", "w") as f:
+            with open("results_test.txt", "w") as f:
                 f.write(f"Num_Centroids\tLoss\tDice_Score\tNum_epochs\tCentroid_time\n")    
         
-        with open("results_train_test.txt", "a") as f:
+        with open("results_test.txt", "a") as f:
             f.write(f"{i}\t{test_perf['test_loss']:.4f}\t{test_perf['test_dsc']:.4f}\t{trainer.current_epoch:.4f}\t{end - start:.4f}\n")

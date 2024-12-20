@@ -34,7 +34,6 @@ class CLUESampling(SamplingStrategy):
 
         target_size = 1024
         # avg_pool = torch.nn.AvgPool2d(kernel_size=(3, 3), stride=1)
-        avg_pool = torch.nn.AdaptiveAvgPool2d((int(target_size ** 0.5), int(target_size ** 0.5)))
         
         with torch.no_grad():
             for batch_idx, (data, _) in enumerate(tqdm(loader)):
