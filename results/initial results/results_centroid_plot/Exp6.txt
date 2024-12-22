@@ -1,0 +1,38 @@
+
+Test Results - Average Loss: 0.5151, Average Dice Score: 0.7595
+100%
+[Finetuning] Epoch: 1 Avg Loss: 0.3158
+[Validation] Avg Loss: 0.2990, Avg Dice Score: 0.8999
+100%
+[Finetuning] Epoch: 2 Avg Loss: 0.3075
+[Validation] Avg Loss: 0.2987, Avg Dice Score: 0.8989 100%||
+[Finetuning] Epoch: 3 Avg Loss: 0.3029
+[Validation] Avg Loss: 0.2958, Avg Dice Score: 0.8997 100% |
+[Finetuning] Epoch: 4 Avg Loss: 0.3007
+[Validation] Avg Loss: 0.2966, Avg Dice Score: 0.9002 100% ||
+[Finetuning] Epoch: 5 Avg Loss: 0.2973
+[Validation] Avg Loss: 0.2932, Avg Dice Score: 0.9056
+100%
+[Finetuning] Epoch: 6 Avg Loss: 0.2976
+[Validation] Avg Loss: 0.2995, Avg Dice Score: 0.8948 100%||
+[Finetuning] Epoch: 7 Avg Loss: 0.2965
+[Validation] Avg Loss: 0.2962, Avg Dice Score: 0.8978 100% |
+[Finetuning] Epoch: 8 Avg Loss: 0.2931
+[Validation] Avg Loss: 0.2955, Avg Dice Score: 0.8995 100%||
+[Finetuning] Epoch: 9 Avg Loss: 0.2884
+[Validation] Avg Loss: 0.3015, Avg Dice Score: 0.8893
+100%
+[Finetuning] Epoch: 10 Avg Loss: 0.2871
+143/143 [00:14<00:00, 9.87it/s]
+143/143 [00:13<00:00, 10.28it/s]
+143/143 [00:13<00:00, 10.25it/s]
+143/143 [00:13<00:00, 10.46it/s]
+143/143 [00:13<00:00, 10.37it/s]
+143/143 [00:14<00:00, 9.89it/s]
+143/143 [00:14<00:00, 10.17it/s]
+143/143 [00:13<00:00, 10.23it/s]
+143/143 [00:13<00:00, 10.26it/s]
+143/143 [00:14<00:00, 10.10it/s]
+[Validation] Avg Loss: 0.2970, Avg Dice Score: 0.8971 /home/mikhelson/MedImSeg-Lab24/CLUE/lib/python3.8/site-packages/lightning/pytorch/core/module.py:447: You are trying to 'self.log()' but the 'self.trainer reference is not registered on the model yet. This is most likely because the model hasn't been passed to the 'Train
+er'
+Test Results Average Loss: 0.5973, Average Dice Score: 0.7230
