@@ -57,7 +57,7 @@ if __name__ == '__main__':
     parser.add_argument('--clue_softmax_t', type=float, default=1.0, help="Temperature.")
     parser.add_argument('--adapt_num_epochs', type=int, default=20, help="Number epochs for finetuning.")
     parser.add_argument('--cluster_type', type=str, default='centroids', help="This parameter determines whether we will train our model on centroids or on the most confident data close to centroids.")
-    parser.add_argument('--checkpoint_path', type=str, default='mnmv2-15-19_10-12-2024-v1.ckpt', 
+    parser.add_argument('--checkpoint_path', type=str, default='../../MedImSeg-Lab24/pre-trained/trained_UNets/mnmv2-15-19_10-12-2024-v1.ckpt', 
                         help="Path to the model checkpoint.")
     parser.add_argument('--device', type=str, default='cuda:0', help="Device to use for training (e.g., 'cuda:0', 'cuda:1', or 'cpu').")
     parser.add_argument('--paral', type=bool, default=False, help='Enabling parallelization of the embedding, clustering, and model completion process')
@@ -68,7 +68,7 @@ if __name__ == '__main__':
     unet_config    = OmegaConf.load('../../MedImSeg-Lab24/configs/monai_unet.yaml')
     trainer_config = OmegaConf.load('../../MedImSeg-Lab24/configs/unet_trainer.yaml')
 
-    for i in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]:
+    for i in [1, 10, 50, 100, 300, 500, 700, 1000]:
         # init datamodule
         datamodule = MNMv2DataModule(
             data_dir=mnmv2_config.data_dir,
@@ -223,8 +223,8 @@ if __name__ == '__main__':
         combined_targets = torch.cat([datamodule.mnm_train.target, selected_targets], dim=0)
 
         combined_data = MNMv2Subset(
-            input=combined_inputs,
-            target=combined_targets,
+            input=selected_inputs,#combined_inputs,
+            target=selected_targets,#combined_targets,
         )
         
         datamodule.mnm_train = combined_data
@@ -253,8 +253,8 @@ if __name__ == '__main__':
 
         # Write results to file
         if i == 1:
-            with open("/home/chopra/MedImSeg-Lab24/Tasks/src/results/results_test.txt", "w") as f:
+            with open("results_test.txt", "w") as f:
                 f.write(f"Num_Centroids\tLoss\tDice_Score\tNum_epochs\tCentroid_time\n")    
         
-        with open("/home/chopra/MedImSeg-Lab24/Tasks/src/results/results_test.txt", "a") as f:
+        with open("results_test.txt", "a") as f:
             f.write(f"{i}\t{test_perf['test_loss']:.4f}\t{test_perf['test_dsc']:.4f}\t{trainer.current_epoch:.4f}\t{end - start:.4f}\n")
