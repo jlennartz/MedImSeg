@@ -1,4 +1,4 @@
-data_dir: "../../../../../data/MNM/"
+data_dir: "/home/chopra/old/Tasks/data/MNM/"
 vendor_assignment: {'train': 'siemens', 'test': 'ge'}
 batch_size: 32
 binary_target: False
