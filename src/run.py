@@ -57,7 +57,7 @@ if __name__ == '__main__':
     parser.add_argument('--clue_softmax_t', type=float, default=1.0, help="Temperature.")
     parser.add_argument('--adapt_num_epochs', type=int, default=20, help="Number epochs for finetuning.")
     parser.add_argument('--cluster_type', type=str, default='centroids', help="This parameter determines whether we will train our model on centroids or on the most confident data close to centroids.")
-    parser.add_argument('--checkpoint_path', type=str, default='../../MedImSeg-Lab24/pre-trained/trained_UNets/mnmv2-15-19_10-12-2024-v1.ckpt', 
+    parser.add_argument('--checkpoint_path', type=str, default='mnmv2-15-19_10-12-2024-v1.ckpt', 
                         help="Path to the model checkpoint.")
     parser.add_argument('--device', type=str, default='cuda:0', help="Device to use for training (e.g., 'cuda:0', 'cuda:1', or 'cpu').")
     parser.add_argument('--paral', type=bool, default=False, help='Enabling parallelization of the embedding, clustering, and model completion process')
