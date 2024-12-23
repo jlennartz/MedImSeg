@@ -1,0 +1,2 @@
+Num_Centroids	Loss	Dice_Score	Num_epochs	Centroid_time
+1	1.9778	0.0000	100.0000	5.4633

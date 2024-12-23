@@ -453,7 +453,7 @@ class MNMv2Dataset(Dataset):
         self.normalize = normalize
         self.mode = mode
 
-        self.data_info = pd.read_csv(self.data_dir / "dataset_information.csv", index_col=0)
+        self.data_info = pd.read_csv("/home/lennartz/data/MNM/dataset_information.csv", index_col=0)
         self.crop = CenterCrop(256)
         self.input = None
         self.target = None

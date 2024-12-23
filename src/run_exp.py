@@ -9,7 +9,6 @@ from omegaconf import OmegaConf
 import argparse
 import lightning as L
 from lightning.pytorch.callbacks import ModelCheckpoint
-from lightning.pytorch.callbacks.early_stopping import EarlyStopping
 
 from monai.networks.nets import UNet
 from clue import CLUESampling
@@ -26,11 +25,9 @@ class MNMv2Subset(Dataset):
         self,
         input,
         target,
-        # weight
     ):
         self.input = input
         self.target = target
-        # self.weight = weight
 
     def __len__(self):
         return self.input.shape[0]
@@ -58,18 +55,19 @@ if __name__ == '__main__':
     parser.add_argument('--clue_softmax_t', type=float, default=1.0, help="Temperature.")
     parser.add_argument('--adapt_num_epochs', type=int, default=20, help="Number epochs for finetuning.")
     parser.add_argument('--cluster_type', type=str, default='centroids', help="This parameter determines whether we will train our model on centroids or on the most confident data close to centroids.")
-    parser.add_argument('--checkpoint_path', type=str, default='../../MedImSeg-Lab24/pre-trained/trained_UNets/mnmv2-15-19_10-12-2024-v1.ckpt', 
+    parser.add_argument('--checkpoint_path', type=str, default='/home/chopra/lab-git/MedImSeg-Lab24/checkpoints/mnmv2-15-19_10-12-2024-v1.ckpt', 
                         help="Path to the model checkpoint.")
     parser.add_argument('--device', type=str, default='cuda:0', help="Device to use for training (e.g., 'cuda:0', 'cuda:1', or 'cpu').")
     parser.add_argument('--paral', type=bool, default=False, help='Enabling parallelization of the embedding, clustering, and model completion process')
     parser.add_argument('--threshold', type=float, default=0.5, help='The threshold removes the images in which the model is most confident')
     args = parser.parse_args()
 
-    mnmv2_config   = OmegaConf.load('../../MedImSeg-Lab24/configs/mnmv2.yaml')
-    unet_config    = OmegaConf.load('../../MedImSeg-Lab24/configs/monai_unet.yaml')
-    trainer_config = OmegaConf.load('../../MedImSeg-Lab24/configs/unet_trainer.yaml')
+    mnmv2_config   = OmegaConf.load('/home/chopra/lab-git/MedImSeg-Lab24/configs/mnmv2.yaml')
+    unet_config    = OmegaConf.load('/home/chopra/lab-git/MedImSeg-Lab24/configs/monai_unet.yaml')
+    trainer_config = OmegaConf.load('/home/chopra/lab-git/MedImSeg-Lab24/configs/unet_trainer.yaml')
 
-    for i in [1, 10, 50, 100, 300, 500, 700, 1000]:
+    # for i in [1, 10, 50, 100, 300, 500, 700, 1000]:
+    for i in [1]:
         # init datamodule
         datamodule = MNMv2DataModule(
             data_dir=mnmv2_config.data_dir,
@@ -90,9 +88,11 @@ if __name__ == '__main__':
             'cluster_type': args.cluster_type,
             'clue_softmax_t': args.clue_softmax_t,
             'dataset': OmegaConf.to_container(mnmv2_config),
+            'batch_size': unet_config.get('batch_size', 32),
             'unet': OmegaConf.to_container(unet_config),
             'trainer': OmegaConf.to_container(trainer_config),
         })
+
         
         if args.train:
             model = LightningSegmentationModel(cfg=cfg)
@@ -104,11 +104,6 @@ if __name__ == '__main__':
                 limit_train_batches=trainer_config.limit_train_batches,
                 max_epochs=trainer_config.max_epochs,
                 callbacks=[
-                    EarlyStopping(
-                        monitor=trainer_config.early_stopping.monitor, 
-                        mode=trainer_config.early_stopping.mode, 
-                        patience=unet_config.patience * 2
-                    ),
                     ModelCheckpoint(
                         dirpath=trainer_config.model_checkpoint.dirpath,
                         filename=filename,
@@ -152,14 +147,8 @@ if __name__ == '__main__':
                     limit_train_batches=trainer_config.limit_train_batches,
                     max_epochs=args.adapt_num_epochs,
                     callbacks=[
-                        EarlyStopping(
-                            monitor=trainer_config.early_stopping.monitor, 
-                            mode=trainer_config.early_stopping.mode, 
-                            patience=unet_config.patience * 2
-                        ),
                         ModelCheckpoint(
                             dirpath=trainer_config.model_checkpoint.dirpath,
-                            # filename=filename,
                             save_top_k=trainer_config.model_checkpoint.save_top_k, 
                             monitor=trainer_config.model_checkpoint.monitor,
                         )
@@ -198,11 +187,15 @@ if __name__ == '__main__':
 
         # Getting centroids / nearest points to centroids
         test_idx = np.arange(len(datamodule.mnm_test))
-        clue_sampler = CLUESampling(dset=datamodule.mnm_test,
-                                    train_idx=test_idx, 
-                                    model=model, 
-                                    device=device, 
-                                    args=cfg)
+        clue_sampler = CLUESampling(
+            dset=datamodule.mnm_test,
+            train_idx=test_idx,
+            model=model,
+            device=device,
+            args=cfg,
+            batch_size=cfg.get('batch_size', 32)  # Pass batch_size explicitly
+        )
+
         # There is no need to set the number of centroids more than the number of photos
         if i > len(clue_sampler.dset):
             i = len(clue_sampler.dset)
@@ -254,8 +247,8 @@ if __name__ == '__main__':
 
         # Write results to file
         if i == 1:
-            with open("results_test.txt", "w") as f:
+            with open("/home/chopra/lab-git/MedImSeg-Lab24/src/results_test_100.txt", "w") as f:
                 f.write(f"Num_Centroids\tLoss\tDice_Score\tNum_epochs\tCentroid_time\n")    
         
-        with open("results_test.txt", "a") as f:
+        with open("/home/chopra/lab-git/MedImSeg-Lab24/src/results_test_100.txt", "a") as f:
             f.write(f"{i}\t{test_perf['test_loss']:.4f}\t{test_perf['test_dsc']:.4f}\t{trainer.current_epoch:.4f}\t{end - start:.4f}\n")
