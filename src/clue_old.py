@@ -24,16 +24,6 @@ class CLUESampling(SamplingStrategy):
         self.cluster_type = args.cluster_type
         self.T = args.clue_softmax_t
 
-        # [NEW] Retrieve new parameters from args
-        self.use_uncertainty = args.use_uncertainty
-        self.kernel_size = args.kernel_size
-        self.stride = args.stride
-        self.target_size = args.target_size  # <--- newly introduced parameter
-        # target_size = 1024 #32x32
-        # target_size = 256 #16x16
-        # target_size = 4096 #64x64
-        #target_size = 16384 #128x128
-
     def get_embedding(self, model, loader, device, args, with_emb=False):
         self.model.eval()
         model = model.to(self.device)
@@ -41,10 +31,12 @@ class CLUESampling(SamplingStrategy):
         embedding_pen = []
         embedding = []
         self.image_to_embedding_idx = []
-
-        # Use the parameters from the constructor
-        avg_pool = torch.nn.AvgPool2d(kernel_size=(self.kernel_size, self.kernel_size),
-                                      stride=self.stride)
+        avg_pool = torch.nn.AvgPool2d(kernel_size=(3, 3), stride=2)
+        # target_size = 1024 #32x32
+        # target_size = 256 #16x16
+        # target_size = 4096 #64x64
+        target_size = 16384 #128x128
+        
 
         with torch.no_grad():
             for batch_idx, (data, _) in enumerate(tqdm(loader)):
@@ -53,10 +45,11 @@ class CLUESampling(SamplingStrategy):
                 if with_emb:
                     e1, e2 = model(data, with_emb=True)
                 
-                # AvgPooling repeatedly until the spatial area is <= target_size
-                while e1.shape[2] * e1.shape[3] > self.target_size:
+                # AvgPooling
+                while e1.shape[2] * e1.shape[3] > target_size:
                     e1 = avg_pool(e1)
-                while e2.shape[2] * e2.shape[3] > self.target_size:
+                
+                while e2.shape[2] * e2.shape[3] > target_size:
                     e2 = avg_pool(e2)
 
                 # [batch_size, h * w * num_classes]
@@ -86,7 +79,7 @@ class CLUESampling(SamplingStrategy):
             self.dset,
             sampler=train_sampler,
             num_workers=4,
-            batch_size=self.batch_size,
+            batch_size=self.batch_size,  # Use the batch_size parameter
             drop_last=False,
             collate_fn=self.custom_collate
         )
@@ -95,13 +88,10 @@ class CLUESampling(SamplingStrategy):
         tgt_emb, tgt_pen_emb = self.get_embedding(self.model, data_loader, self.device, self.args, with_emb=True)
         tgt_pen_emb = tgt_pen_emb.cpu().numpy()
 
-        # Conditionally compute sample_weights
-        if self.use_uncertainty:
-            tgt_scores = nn.Softmax(dim=1)(tgt_emb / self.T)
-            tgt_scores += 1e-8
-            sample_weights = (-(tgt_scores * torch.log(tgt_scores)).sum(1)).cpu().numpy()
-        else:
-            sample_weights = np.ones(tgt_pen_emb.shape[0])
+        # Calculate uncertainty
+        tgt_scores = nn.Softmax(dim=1)(tgt_emb / self.T)
+        tgt_scores += 1e-8
+        sample_weights = (-(tgt_scores * torch.log(tgt_scores)).sum(1)).cpu().numpy()
 
         km = KMeans(n)
         km.fit(tgt_pen_emb, sample_weight=sample_weights)
