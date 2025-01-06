@@ -1,0 +1,60 @@
+cfg:
+  unet_config:
+    n_filters_init: 16
+    depth: 4
+    spatial_dims: 2
+    in_channels: 1
+    out_channels: 4
+    num_res_units: 4
+    lr: 0.001
+    patience: 5
+  binary_target: false
+  lr: 0.001
+  patience: 5
+  paral: false
+  threshold: 0.5
+  adapt_num_epochs: 100
+  cluster_type: centroids
+  clue_softmax_t: 0.1
+  dataset:
+    data_dir: /home/chopra/old/Tasks/data/MNM/
+    vendor_assignment:
+      train: siemens
+      test: ge
+    batch_size: 32
+    binary_target: false
+    non_empty_target: false
+  batch_size: 32
+  unet:
+    n_filters_init: 16
+    depth: 4
+    spatial_dims: 2
+    in_channels: 1
+    out_channels: 4
+    num_res_units: 4
+    lr: 0.001
+    patience: 5
+  trainer:
+    train_transforms: global_transforms
+    limit_train_batches: 50
+    max_epochs: 100
+    early_stopping:
+      monitor: val_loss
+      mode: min
+    model_checkpoint:
+      save_top_k: 2
+      dirpath: /home/chopra/old/pre-trained/trained_UNets
+      monitor: val_loss
+    logging: true
+  use_uncertainty: true
+  kernel_size: 3
+  stride: 2
+  target_size: 1024
+  dim_reduction: pca
+  pca_components: 100
+  umap_n_neighbors: 15
+  umap_min_dist: 0.1
+  umap_components: 50
+  embedding_layers:
+  - encoder.layer4
+  - decoder.layer4
